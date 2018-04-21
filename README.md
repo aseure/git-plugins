@@ -14,9 +14,11 @@ export PATH=path/to/git-plugins/bin:$PATH
 
 ## Dependencies
 
- * [jq](https://stedolan.github.io/jq/)
+ * grep
+ * sed
+ * [curl](https://curl.haxx.se/download.html)
+ * [jq](https://stedolan.github.io/jq/download/)
  * [hub](https://hub.github.com/)
- * [curl](https://curl.haxx.se/)
 
 ## Description
 
