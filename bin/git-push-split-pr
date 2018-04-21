@@ -52,7 +52,7 @@ get_pr_id_for_branch() {
 }
 
 set_pr_base_branch() {
-  curl -s "https://api.github.com/repos/aseure/test/pulls/$1" \
+  curl -s "https://api.github.com/repos/$github_repo/pulls/$1" \
     -H "Authorization: token $token" \
     -d "{ \"base\": \"$2\" }" > /dev/null
 }
