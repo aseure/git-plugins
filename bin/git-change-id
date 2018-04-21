@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+commit_msg="$(git commit-message $1)"
+echo $commit_msg | grep 'ChangeID: ' | sed 's/.*ChangeID: //'

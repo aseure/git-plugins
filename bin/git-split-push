@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+set -e
+
+###############################################################################
+# Variables                                                                   #
+###############################################################################
+
+base=$1
+branch=$2
+token="$(cat ~/.config/hub | grep oauth_token | sed 's/.*oauth_token: //')"
+github_repo="$(git remote show origin | grep 'Push' | sed 's/.*github.com:\(.*\).git$/\1/')"
+json_pull_requests="$(curl -s "https://api.github.com/repos/$github_repo/pulls" -H "Authorization: token $token")"
+
+###############################################################################
+# Functions                                                                   #
+###############################################################################
+
+print_usage() {
+  echo -e "\nUsage: split-push BASE [BRANCH]\n"
+}
+
+is_variable_set() {
+  if [[ -z "$1" ]]; then return 1; else return 0; fi
+}
+
+does_branch_exist() {
+  git rev-parse --verify --quiet $1 > /dev/null
+  if [[ "$?" != "0" ]]; then return 1; else return 0; fi
+}
+
+is_program_installed() {
+  command -v $1 > /dev/null
+}
+
+list_all_commits() {
+  git log --reverse --pretty=format:'%H' $1..$2
+}
+
+does_distant_branch_exist_for_branch() {
+  distant_branch="$(git branch -a | grep "remotes/origin/$1")"
+  if [[ "$distant_branch" == "" ]]; then return 1; else return 0; fi
+}
+
+are_local_and_distant_in_sync() {
+  hash_local="$(git rev-list -n 1 $1)"
+  hash_distant="$(git rev-list -n 1 remotes/origin/$1)"
+  if [[ "$hash_local" == "$hash_distant" ]]; then return 0; else return 1; fi
+}
+
+get_pr_id_for_branch() {
+  echo "$json_pull_requests" | jq ".[] | select(.head.ref==\"$1\") | .number"
+}
+
+set_pr_base_branch() {
+  curl -s "https://api.github.com/repos/aseure/test/pulls/$1" \
+    -H "Authorization: token $token" \
+    -d "{ \"base\": \"$2\" }" > /dev/null
+}
+
+update_pr_base_branch() {
+  id="$(get_pr_id_for_branch $1)"
+  set_pr_base_branch $id $2
+}
+
+###############################################################################
+# Initial checks                                                              #
+###############################################################################
+
+if ! is_variable_set "$base"; then
+  print_usage
+  exit 1
+fi
+
+if [[ "$branch" == "" ]]; then
+  branch="$(git current-branch)"
+  if [[ "$branch" == "" ]]; then
+    echo "If BRANCH is not provided, should run from the tip of a branch"
+    exit 1
+  fi
+fi
+
+for var in "$token" "$json_pull_requests"; do
+  if ! is_variable_set "$var"; then
+    exit 1
+  fi
+done
+
+for b in "$base" "$branch"; do
+  if ! does_branch_exist "$b"; then
+    echo "Branch '$b' does not exist"
+    exit 1
+  fi
+done
+
+for program in "hub" "grep" "curl" "jq"; do
+  if ! is_program_installed "$program"; then
+    echo "Program '$program' is not installed"
+    exit 1
+  fi
+done
+
+###############################################################################
+# Main                                                                        #
+###############################################################################
+
+git fetch -q -p > /dev/null
+
+filter="
+  ORIGINAL_COMMIT=\`cat\` &&
+  echo \"\${ORIGINAL_COMMIT}\" &&
+  if [[ \${ORIGINAL_COMMIT} != *\"ChangeID: \"* ]]; then
+    printf \"\nChangeID: %s\" \`git rev-parse --short \${GIT_COMMIT}\`
+  fi
+"
+git filter-branch --msg-filter "$filter" $base..$branch > /dev/null 2>&1
+git update-ref -d refs/original/refs/heads/$branch
+
+new_base=$base
+
+for commit in $(list_all_commits $base $branch); do
+  id=$(git change-id $commit)
+  new_branch=$branch-$id
+  git branch $new_branch $commit
+
+  if does_distant_branch_exist_for_branch $new_branch; then
+    if ! are_local_and_distant_in_sync $new_branch; then
+      git push -q -f origin $new_branch:$new_branch
+    fi
+    update_pr_base_branch $new_branch $new_base
+    pr_id=$(get_pr_id_for_branch $new_branch)
+    pr_url="https://github.com/$github_repo/pull/$pr_id"
+  else
+    commit_msg=$(git commit-message $commit)
+    git push -q -u origin $new_branch > /dev/null
+    pr_url="$(hub pull-request -m "$commit_msg" -b $new_base -h $new_branch)"
+  fi
+
+  commit_subject=$(git commit-subject $commit)
+  echo "PR $pr_url for '$commit_subject'"
+
+  git branch --quiet -D $new_branch
+  new_base=$new_branch
+done

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+git branch --points-at HEAD | sed 's/* //'
