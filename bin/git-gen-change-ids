@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+filter="
+  ORIGINAL_COMMIT=\`cat\` &&
+  echo \"\${ORIGINAL_COMMIT}\" &&
+  if [[ \${ORIGINAL_COMMIT} != *\"ChangeID: \"* ]]; then
+    printf \"\nChangeID: %s\" \`git rev-parse --short \${GIT_COMMIT}\`
+  fi
+"
+git filter-branch --msg-filter "$filter" $1..$2 > /dev/null 2>&1
+git update-ref -d refs/original/refs/heads/$2

@@ -104,16 +104,7 @@ done
 ###############################################################################
 
 git fetch -q -p > /dev/null
-
-filter="
-  ORIGINAL_COMMIT=\`cat\` &&
-  echo \"\${ORIGINAL_COMMIT}\" &&
-  if [[ \${ORIGINAL_COMMIT} != *\"ChangeID: \"* ]]; then
-    printf \"\nChangeID: %s\" \`git rev-parse --short \${GIT_COMMIT}\`
-  fi
-"
-git filter-branch --msg-filter "$filter" $base..$branch > /dev/null 2>&1
-git update-ref -d refs/original/refs/heads/$branch
+git gen-change-ids $base $branch
 
 new_base=$base
 
